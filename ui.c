@@ -12,7 +12,7 @@
 void ratemovie(int uid){
 	int movieid;
 	double rating;
-	FILE *fstream = fopen("\\Dataset\\ratings_learn.csv","a");
+	FILE *fstream = fopen("Dataset/ratings_learn.csv","a");
 	printf("Enter movieid: ");
 	if(1 != scanf("%d",&movieid)){
         printf("\nCharacter inputs are not accepted.\n");
@@ -38,7 +38,7 @@ void ratemovie(int uid){
 int assignuid(){
     char *line, *record;
     char tmp[1024];
-    FILE *fstream = fopen("\\Dataset\\ratings_learn.csv","r");
+    FILE *fstream = fopen("Dataset/ratings_learn.csv","r");
     int j=0;
     int max = 0;
     while((line=fgets(tmp,sizeof(tmp),fstream))!=NULL){
@@ -61,11 +61,11 @@ int assignuid(){
 void getmovies(int uid){
     char *line, *record;
     char tmp[1024];
-    FILE *fstream = fopen("\\Dataset\\ratings_learn.csv","r");
+    FILE *fstream = fopen("Dataset/ratings_learn.csv","r");
     char *movienames = (char *)malloc(sizeof(char) * No_of_movies * 1024);
 	char *moviegenres = (char *)malloc(sizeof(char) * No_of_movies * 1024);
-	get_movie_names(movienames,"\\Dataset\\movies.csv");
-	get_movie_genres(moviegenres,"\\Dataset\\movies_genres.csv");
+	get_movie_names(movienames,"Dataset/movies.csv");
+	get_movie_genres(moviegenres,"Dataset/movies_genres.csv");
     int j=0,userid,movieid;
     double rating;
     while((line=fgets(tmp,sizeof(tmp),fstream))!=NULL){
