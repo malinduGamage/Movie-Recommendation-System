@@ -19,16 +19,23 @@ double pearson_correlation(double *A, double *B, unsigned int size){
 void calc_similarity(double *normalizeduser, double *normalized_matrix, double *similarity, int No_of_users, int No_of_movies){
 	int i=0,j=0;
 	for(i=0;i<No_of_users;i++){ //traverse through each user
-		double *A;
-		A = (double *)malloc(sizeof(double) * No_of_movies);
-		
-		//get rating vector for that user
-		for(j=0; j<No_of_movies; j++){
-			A[j] = normalized_matrix[i*No_of_movies + j];
-		}
-		
+
+		/* ── OPTIMIZATION 1: Eliminate Memory Allocation ────────────────── */
+
+		// ORIGINAL CODE:
+		// double *A;
+		// A = (double *)malloc(sizeof(double) * No_of_movies);
+		// for(j=0; j<No_of_movies; j++){
+		// 	A[j] = normalized_matrix[i*No_of_movies + j];
+		// }
+
+		// OPTIMIZED: direct pointer to row — zero allocation, zero copy
+		double *A = &normalized_matrix[i * No_of_movies];
+
 		//find similarity between new user and ith user
 		similarity[i] = pearson_correlation(normalizeduser,A,No_of_movies);
-		free(A);
+
+		// ORIGINAL CODE:
+		// free(A);
 	}
 }
