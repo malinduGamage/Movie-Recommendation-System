@@ -2,6 +2,7 @@
 #include<stdio.h>
 #include<stdlib.h>
 #include<string.h>
+#include<omp.h>
 
 double calc_average(double *utility_matrix,int No_of_movies){ //inputs: utility matrix and user id
 	double average, sum=0;
@@ -19,6 +20,9 @@ double calc_average(double *utility_matrix,int No_of_movies){ //inputs: utility 
 
 void normalize_matrix(double *utility_matrix, double *normalized_matrix, int No_of_users, int No_of_movies){ //inputs: utility matrix and new matrix to save normalized ratings
 	int i=0,j=0;
+	/* OPTIMIZATION 5: OpenMP Parallelization
+	 * Distributes independent matrix row calculations across available CPU cores. */
+	#pragma omp parallel for private(j)
 	for(i=0;i<No_of_users;i++){
 
 		/* ── Pre-calculated row pointers ───────────────────────────────────

@@ -2,6 +2,7 @@
 #include<stdio.h>
 #include<stdlib.h>
 #include<math.h>
+#include<omp.h>
 
 double pearson_correlation(double *A, double *B, unsigned int size){
     double dot_p=0.0;
@@ -18,6 +19,9 @@ double pearson_correlation(double *A, double *B, unsigned int size){
 
 void calc_similarity(double *normalizeduser, double *normalized_matrix, double *similarity, int No_of_users, int No_of_movies){
 	int i=0,j=0;
+	/* OPTIMIZATION 5: OpenMP Parallelization
+	 * Distributes independent user calculations across available CPU cores. */
+	#pragma omp parallel for
 	for(i=0;i<No_of_users;i++){ //traverse through each user
 
 		/* ── OPTIMIZATION 1: Eliminate Memory Allocation ────────────────── */

@@ -70,6 +70,29 @@ double timer_stop(Timer *t) {
  *  ORIGINAL (UNOPTIMIZED) FUNCTIONS — kept here for comparison
  * ═══════════════════════════════════════════════════════════════════════ */
 
+/* Original normalize_matrix: pure serial without OpenMP pragmas */
+static void orig_normalize_matrix(double *utility_matrix, double *normalized_matrix, int No_of_users, int No_of_movies_p) {
+    int i, j;
+    for (i = 0; i < No_of_users; i++) {
+        double average, sum = 0;
+        int count = 0;
+        for (j = 0; j < No_of_movies_p; j++) {
+            if (utility_matrix[i * No_of_movies_p + j] != 0) {
+                count++;
+                sum += utility_matrix[i * No_of_movies_p + j];
+            }
+        }
+        average = (count == 0) ? 0 : sum / count;
+        for (j = 0; j < No_of_movies_p; j++) {
+            if (utility_matrix[i * No_of_movies_p + j] == 0) {
+                normalized_matrix[i * No_of_movies_p + j] = 0;
+            } else {
+                normalized_matrix[i * No_of_movies_p + j] = utility_matrix[i * No_of_movies_p + j] - average;
+            }
+        }
+    }
+}
+
 /* Original findusers: uses strtok to parse all columns */
 static int orig_findusers(void) {
     char *line, *record;
@@ -162,33 +185,42 @@ static void orig_calc_similarity(double *normalizeduser, double *normalized_matr
  * ═══════════════════════════════════════════════════════════════════════ */
 
 /* Optimized: merged findusers + get_utility_matrix with fast CSV parsing */
+/* Optimized: merged findusers + get_utility_matrix with Memory Buffered I/O */
 static int opt_get_utility_matrix(double **utility_matrix_out, char *s, int No_of_movies_p, int uid) {
-    char tmp[1024];
-    FILE *fstream = fopen(s, "r");
+    FILE *fstream = fopen(s, "rb");
     if (!fstream) { printf("Error: Cannot open file\n"); exit(1); }
 
-    /* First pass: find No_of_users using fast atoi (no strtok) */
+    fseek(fstream, 0, SEEK_END);
+    long size = ftell(fstream);
+    fseek(fstream, 0, SEEK_SET);
+    char *buffer = (char *)malloc(size + 1);
+    fread(buffer, 1, size, fstream);
+    fclose(fstream);
+    buffer[size] = '\0';
+
     int No_of_users = 0;
-    while (fgets(tmp, sizeof(tmp), fstream) != NULL) {
-        int t = atoi(tmp);
+    char *p = buffer;
+    while (*p) {
+        int t = atoi(p);
         if (t > No_of_users) No_of_users = t;
+        while (*p && *p != '\n') p++;
+        if (*p == '\n') p++;
     }
 
-    /* Allocate matrix */
     *utility_matrix_out = (double *)calloc(No_of_users * No_of_movies_p, sizeof(double));
     if (!*utility_matrix_out) { printf("Error: Alloc failed\n"); exit(1); }
 
-    /* Second pass: fill matrix using manual comma-scan (no strtok) */
-    rewind(fstream);
-    while (fgets(tmp, sizeof(tmp), fstream) != NULL) {
-        char *p = tmp;
+    p = buffer;
+    while (*p) {
         int i = atoi(p) - 1;
         while (*p != ',' && *p != '\0') p++; if (*p == ',') p++;
         int j = atoi(p) - 1;
         while (*p != ',' && *p != '\0') p++; if (*p == ',') p++;
         (*utility_matrix_out)[i * No_of_movies_p + j] = atof(p);
+        while (*p && *p != '\n') p++;
+        if (*p == '\n') p++;
     }
-    fclose(fstream);
+    free(buffer);
     return No_of_users;
 }
 
@@ -283,7 +315,7 @@ static double run_stage_original(int userid) {
     /* We skip movie name/genre loading since it's identical in both versions */
 
     double *normalized_matrix = (double *)calloc(No_of_users * No_of_movies, sizeof(double));
-    normalize_matrix(utility_matrix, normalized_matrix, No_of_users, No_of_movies);
+    orig_normalize_matrix(utility_matrix, normalized_matrix, No_of_users, No_of_movies);
 
     double *newuser = (double *)calloc(No_of_movies, sizeof(double));
     orig_new_user_movies(newuser, "Dataset/ratings_learn.csv", userid);
@@ -319,7 +351,7 @@ static double run_stage_1(int userid) {
     orig_get_utility_matrix(utility_matrix, "Dataset/ratings_learn.csv", No_of_movies, No_of_users, userid);
 
     double *normalized_matrix = (double *)calloc(No_of_users * No_of_movies, sizeof(double));
-    normalize_matrix(utility_matrix, normalized_matrix, No_of_users, No_of_movies);
+    orig_normalize_matrix(utility_matrix, normalized_matrix, No_of_users, No_of_movies);
 
     double *newuser = (double *)calloc(No_of_movies, sizeof(double));
     orig_new_user_movies(newuser, "Dataset/ratings_learn.csv", userid);
@@ -354,7 +386,7 @@ static double run_stage_2(int userid) {
     orig_get_utility_matrix(utility_matrix, "Dataset/ratings_learn.csv", No_of_movies, No_of_users, userid);
 
     double *normalized_matrix = (double *)calloc(No_of_users * No_of_movies, sizeof(double));
-    normalize_matrix(utility_matrix, normalized_matrix, No_of_users, No_of_movies);
+    orig_normalize_matrix(utility_matrix, normalized_matrix, No_of_users, No_of_movies);
 
     double *newuser = (double *)calloc(No_of_movies, sizeof(double));
     /* OPTIMIZED: copy from matrix instead of re-reading file */
@@ -374,7 +406,7 @@ static double run_stage_2(int userid) {
     return elapsed;
 }
 
-/* Stage 3: + Merged findusers into get_utility_matrix with fast CSV parsing */
+/* Stage 3: + Memory-Buffered I/O Data Loading */
 static double run_stage_3(int userid) {
     Timer total;
     timer_start(&total);
@@ -389,7 +421,7 @@ static double run_stage_3(int userid) {
     char *moviegenres = (char *)malloc(sizeof(char) * No_of_movies * 1024);
 
     double *normalized_matrix = (double *)calloc(No_of_users * No_of_movies, sizeof(double));
-    normalize_matrix(utility_matrix, normalized_matrix, No_of_users, No_of_movies);
+    orig_normalize_matrix(utility_matrix, normalized_matrix, No_of_users, No_of_movies);
 
     double *newuser = (double *)calloc(No_of_movies, sizeof(double));
     opt_new_user_movies(newuser, utility_matrix, userid, No_of_movies);
@@ -399,6 +431,41 @@ static double run_stage_3(int userid) {
 
     double *similarity = (double *)malloc(sizeof(double) * No_of_users);
     opt_calc_similarity(normalizednewuser, normalized_matrix, similarity, No_of_users, No_of_movies);
+
+    run_shared_pipeline(No_of_users, k, similarity, newuser, utility_matrix, movienames, moviegenres);
+
+    double elapsed = timer_stop(&total);
+    free(utility_matrix); free(movienames); free(moviegenres);
+    free(normalized_matrix); free(newuser); free(normalizednewuser); free(similarity);
+    return elapsed;
+}
+
+/* Stage 4: + OpenMP Parallelization */
+static double run_stage_4(int userid) {
+    Timer total;
+    timer_start(&total);
+
+    int k = 16;
+
+    double *utility_matrix;
+    int No_of_users = opt_get_utility_matrix(&utility_matrix, "Dataset/ratings_learn.csv", No_of_movies, userid);
+
+    char *movienames = (char *)malloc(sizeof(char) * No_of_movies * 1024);
+    char *moviegenres = (char *)malloc(sizeof(char) * No_of_movies * 1024);
+
+    double *normalized_matrix = (double *)calloc(No_of_users * No_of_movies, sizeof(double));
+    /* OPTIMIZED: Use the parallel normalize_matrix from matrix_normalization.c */
+    normalize_matrix(utility_matrix, normalized_matrix, No_of_users, No_of_movies);
+
+    double *newuser = (double *)calloc(No_of_movies, sizeof(double));
+    opt_new_user_movies(newuser, utility_matrix, userid, No_of_movies);
+
+    double *normalizednewuser = (double *)calloc(No_of_movies, sizeof(double));
+    normalize(newuser, normalizednewuser, No_of_movies);
+
+    double *similarity = (double *)malloc(sizeof(double) * No_of_users);
+    /* OPTIMIZED: Use the parallel calc_similarity from pearsons.c */
+    calc_similarity(normalizednewuser, normalized_matrix, similarity, No_of_users, No_of_movies);
 
     run_shared_pipeline(No_of_users, k, similarity, newuser, utility_matrix, movienames, moviegenres);
 
@@ -429,7 +496,8 @@ int main(int argc, char *argv[]) {
         "Stage 0: Original (baseline)",
         "Stage 1: + Optimized calc_similarity",
         "Stage 2: + Memory-based new_user_movies",
-        "Stage 3: + Merged findusers + fast CSV parsing"
+        "Stage 3: + Memory-Buffered I/O Data Loading",
+        "Stage 4: + OpenMP Parallelization"
     };
 
     typedef double (*stage_func)(int);
@@ -437,22 +505,28 @@ int main(int argc, char *argv[]) {
         run_stage_original,
         run_stage_1,
         run_stage_2,
-        run_stage_3
+        run_stage_3,
+        run_stage_4
     };
 
-    int num_stages = 4;
-    double avg_times[4] = {0};
+    int num_stages = 5;
+    double avg_times[5] = {0};
 
     printf("========================================================================\n");
     printf("  STAGED PERFORMANCE BENCHMARK\n");
-    printf("  User ID: %d | Iterations: %d\n", userid, iterations);
+    if (iterations > 1) {
+        printf("  User IDs: %d to %d | Iterations: %d\n", userid, userid + iterations - 1, iterations);
+    } else {
+        printf("  User ID: %d | Iterations: %d\n", userid, iterations);
+    }
     printf("========================================================================\n\n");
 
     for (s = 0; s < num_stages; s++) {
         printf("  Running %s ...\n", stage_names[s]);
         double total = 0;
         for (i = 0; i < iterations; i++) {
-            total += stages[s](userid);
+            int current_userid = userid + i;
+            total += stages[s](current_userid);
         }
         avg_times[s] = total / iterations;
         printf("    Avg: %.6f s\n\n", avg_times[s]);

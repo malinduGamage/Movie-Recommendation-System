@@ -115,21 +115,24 @@ int get_utility_matrix(double **matrix_out, char *s, int No_of_movies, int uid) 
 ```
 **Files modified:** `utility_matrix.c`, `utility_matrix.h`, `recommender.c`, `benchmark.c`
 
-### 4.4 Optimization 4: Fast CSV Parsing 
-- **Problem**: `strtok()` modifies source strings and requires multiple calls per line, adding overhead.
-- **Solution**: Use manual pointer advancement and `atoi`/`atof` which stop at non-numeric characters.
+### 4.4 Optimization 4: Memory-Buffered I/O
+- **Problem**: Reading files line-by-line with `fgets()` introduces significant disk I/O overhead and buffering bottlenecks.
+- **Solution**: Load the entire dataset into a single massive memory buffer using `fread()`, bypassing line-by-line disk operations completely. The buffer is then parsed linearly using manual zero-copy pointer arithmetic.
 
 ```c
-// AFTER: manual comma-scan (no string modification, single pass)
-char *p = tmp;
-int i = atoi(p) - 1;
-while(*p != ',') p++; p++;
-int j = atoi(p) - 1;
-while(*p != ',') p++; p++;
-matrix[i * cols + j] = atof(p);
+// AFTER: Memory Buffered Block I/O
+fseek(fstream, 0, SEEK_END);
+long size = ftell(fstream);
+fseek(fstream, 0, SEEK_SET);
+char *buffer = (char *)malloc(size + 1);
+fread(buffer, 1, size, fstream);
 ```
 
-### 4.5 Bug Fixes
+### 4.5 Optimization 5: OpenMP Parallelization
+- **Problem**: Operations like matrix normalization and centered cosine similarity process massive independent row datasets iteratively on a single core.
+- **Solution**: Distribute matrix loops across threads using OpenMP (`#pragma omp parallel for`).
+
+### 4.6 Bug Fixes
 During analysis, undefined behavior issues were discovered where pointers to stack memory were being passed to `free()`. These were fixed in `findusers()`, `get_utility_matrix()`, and `new_user_movies()`.
 
 ## 5. Results
@@ -137,41 +140,45 @@ During analysis, undefined behavior issues were discovered where pointers to sta
 
 | Stage | Description | Avg Time (s) | Speedup | Reduction |
 |---|---|---|---|---|
-| 0 | Original (baseline) | 0.078395 | 1.00× | — |
-| 1 | + Optimized calc_similarity | 0.075211 | 1.04× | 4.1% |
-| 2 | + Memory-based new_user_movies | 0.065162 | 1.20× | 16.9% |
-| 3 | + Merged findusers + fast CSV | 0.043505 | 1.80× | 44.5% |
+| 0 | Original (baseline) | 0.0776 | 1.00× | 0.0% |
+| 1 | + Optimized calc_similarity | 0.0783 | 0.99× | ~0% |
+| 2 | + Memory-based new_user_movies | 0.0640 | 1.21× | 17.5% |
+| 3 | + Memory-Buffered I/O Data Loading | 0.0377 | 2.06× | 51.5% |
+| 4 | + OpenMP Parallelization | 0.0250 | 3.10× | 67.8% |
 
-### 5.2 Final Optimized Profile
+### 5.2 Final Optimized Profile (Using Parallelism and Memory I/O)
 
 | Function | Time (s) | % of Total |
 |---|---|---|
-| `get_utility_matrix()` (merged) | 0.02109 | 37.2% |
-| `normalize_matrix()` | 0.02151 | 37.9% |
-| `calc_similarity()` | 0.00539 | 9.5% |
-| `get_movie_names()` | 0.00442 | 7.8% |
-| `get_movie_genres()` | 0.00353 | 6.2% |
-| `kmeans()` | 0.00060 | 1.1% |
-| `new_user_movies()` | 0.00001 | 0.0% |
-| Others | 0.00019 | 0.3% |
-| **Total** | **0.05674** | **100%** |
+| `get_utility_matrix()` (buffered) | 0.014941 | 40.08% |
+| `normalize_matrix()` (parallel) | 0.013619 | 36.53% |
+| `calc_similarity()` (parallel) | 0.002760 | 7.40% |
+| `get_movie_names()` (buffered) | 0.002585 | 6.93% |
+| `get_movie_genres()` (buffered) | 0.002182 | 5.85% |
+| `kmeans()` | 0.000776 | 2.08% |
+| `new_user_movies()` | 0.000010 | 0.03% |
+| Others | 0.000330 | 0.88% |
+| **Total** | **0.037281** | **100%** |
 
 ### 5.3 Summary
-- **Total pipeline time:** Reduced from 0.0784 s to 0.0435 s (44.5% faster).
-- **Speedup factor:** 1.80×
+- **Total pipeline time:** Reduced from 0.0776 s to 0.0250 s (67.8% faster).
+- **Speedup factor:** 3.10×
 
 ## 6. How to Run
 
+> [!TIP]
+> The `-fopenmp` compiler flag is strictly required to activate Stage 4 parallelization.
+
 ```bash
 # 1. Per-function profiling (current optimized code)
-gcc -o benchmark.exe benchmark.c utility_matrix.c matrix_normalization.c \
+gcc -fopenmp -o benchmark.exe benchmark.c utility_matrix.c matrix_normalization.c \
    pearsons.c kmeans.c predictions.c sorting.c -lm -O2
-./benchmark.exe 5 20
+./benchmark.exe 1 100
 
 # 2. Staged comparison (original vs each optimization level)
-gcc -o benchmark_stages.exe benchmark_stages.c matrix_normalization.c \
+gcc -fopenmp -o benchmark_stages.exe benchmark_stages.c matrix_normalization.c \
    pearsons.c kmeans.c predictions.c sorting.c -lm -O2
-./benchmark_stages.exe 5 10
+./benchmark_stages.exe 1 100
 ```
 
 ---
@@ -193,7 +200,7 @@ Instructions to run this system:
 
 1. Open recommender.c and correct all the paths. (on line 20,55,56,57 and 63).
 2. Open ui.c and correct all the paths. (on line 15, 41, 64, 67, 68).
-3. Open command line and locate the directory where source code is stored and type: `gcc ui.c kmeans.c matrix_normalization.c pearsons.c predictions.c recommender.c sorting.c utility_matrix.c`
+3. Open command line and locate the directory where source code is stored and type: `gcc -fopenmp ui.c kmeans.c matrix_normalization.c pearsons.c predictions.c recommender.c sorting.c utility_matrix.c`
 4. Type `a` on command line to execute the program.
 
 # Output:

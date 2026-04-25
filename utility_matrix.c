@@ -3,77 +3,92 @@
 #include<stdlib.h>
 #include<string.h>
 
+
 void get_movie_names(char *movienames, char *s){
-	char *line, *record;
-	char tmp[1024];
-	int i=0,j=0;
-	FILE *fstream = fopen(s,"r");
+	FILE *fstream = fopen(s,"rb");
 	if (!fstream) {
 		printf("Error: Could not open file %s\n", s);
 		exit(1);
 	}
-	while((line=fgets(tmp,sizeof(tmp),fstream))!=NULL){ //traverse till end of file while storing each line
-		record = strtok(line,","); //break line into multiple strings separated by comma
-		while(record!=NULL){
-			if(j==1){ //second string(i.e. moviename in the csv file)
-				strcpy(&movienames[i*1024],record);
-			}
-			j++;
-			record = strtok(NULL,","); //iterate
-		}
-		i++;j=0;
-	}
+	fseek(fstream, 0, SEEK_END);
+	long size = ftell(fstream);
+	fseek(fstream, 0, SEEK_SET);
+	char *buf = (char *)malloc(size + 1);
+	fread(buf, 1, size, fstream);
 	fclose(fstream);
-	/* OPTIMIZATION 5.5: Bug Fix — removed free(line) and free(record)
-	 * ORIGINAL CODE:
-	 * free(line);
-	 * free(record);
-	 * These were freeing pointers into the stack buffer tmp[1024],
-	 * which is undefined behaviour that could cause memory corruption. */
+	buf[size] = '\0';
+
+	char *p = buf;
+	int i = 0;
+	while (*p) {
+		while (*p != ',' && *p != '\0') p++;
+		if (*p == ',') p++;
+		
+		char *start = p;
+		while (*p != ',' && *p != '\n' && *p != '\0') p++;
+		int len = p - start;
+		if (len > 1023) len = 1023;
+		strncpy(&movienames[i * 1024], start, len);
+		movienames[i * 1024 + len] = '\0';
+
+		while (*p != '\n' && *p != '\0') p++;
+		if (*p == '\n') p++;
+		i++;
+	}
+	free(buf);
 }
 
 void get_movie_genres(char *moviegenres, char *s){
-	char *line, *record;
-	char tmp[1024];
-	int i=0,j=0;
-	FILE *fstream = fopen(s,"r");
+	FILE *fstream = fopen(s,"rb");
 	if (!fstream) {
 		printf("Error: Could not open file %s\n", s);
 		exit(1);
 	}
-	while((line=fgets(tmp,sizeof(tmp),fstream))!=NULL){
-		record = strtok(line,",");
-		while(record!=NULL){
-			if(j==1){
-				strcpy(&moviegenres[i*1024],record);
-			}
-			j++;
-			record = strtok(NULL,",");
-		}
-		i++;j=0;
-	}
+	fseek(fstream, 0, SEEK_END);
+	long size = ftell(fstream);
+	fseek(fstream, 0, SEEK_SET);
+	char *buf = (char *)malloc(size + 1);
+	fread(buf, 1, size, fstream);
 	fclose(fstream);
-	/* OPTIMIZATION 5.5: Bug Fix — removed free(line) and free(record)
-	 * Same issue as get_movie_names above. */
+	buf[size] = '\0';
+
+	char *p = buf;
+	int i = 0;
+	while (*p) {
+		while (*p != ',' && *p != '\0') p++;
+		if (*p == ',') p++;
+		
+		char *start = p;
+		while (*p != ',' && *p != '\n' && *p != '\0') p++;
+		int len = p - start;
+		if (len > 1023) len = 1023;
+		strncpy(&moviegenres[i * 1024], start, len);
+		moviegenres[i * 1024 + len] = '\0';
+
+		while (*p != '\n' && *p != '\0') p++;
+		if (*p == '\n') p++;
+		i++;
+	}
+	free(buf);
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
- * OPTIMIZATION 5.3: Merge findusers() into get_utility_matrix()
+ * OPTIMIZATION 3: Merge findusers() into get_utility_matrix()
  *
  * BEFORE: Two separate functions read the same ratings_learn.csv file:
  *   - findusers() scanned for the maximum user ID
  *   - get_utility_matrix() parsed all ratings into the matrix
  * This meant the file was opened, read line-by-line, and closed TWICE.
  *
- * AFTER: Single function using a two-pass approach with rewind():
- *   Pass 1: Find max userId (No_of_users) using fast atoi
+ * AFTER: Single function using a two-pass approach.
+ *   Pass 1: Find max userId (No_of_users)
  *   Pass 2: Fill the matrix with ratings
  * The function now allocates the matrix internally and returns No_of_users.
  *
- * OPTIMIZATION 5.4: Fast CSV Parsing
- * Within both passes, strtok+column-counter is replaced with manual
- * comma-scanning using pointer arithmetic. atoi/atof naturally stop
- * at non-numeric characters (commas), eliminating strtok overhead.
+ * OPTIMIZATION 4: Memory-Buffered I/O
+ * Traditional fgets() file parsing introduces significant disk I/O overhead.
+ * Instead, we load the entire dataset into a single massive memory buffer using
+ * fread(), and parse it linearly using zero-copy pointer arithmetic.
  * ══════════════════════════════════════════════════════════════════════════ */
 
 /* ORIGINAL findusers() — now eliminated (merged into get_utility_matrix):
@@ -97,8 +112,8 @@ void get_movie_genres(char *moviegenres, char *s){
  *         j=0;
  *     }
  *     fclose(fstream);
- *     free(line);    // Bug: freeing stack pointer (Optimization 5.5)
- *     free(record);  // Bug: freeing stack pointer (Optimization 5.5)
+ *     free(line);    // Bug: freeing stack pointer (Bug fixes)
+ *     free(record);  // Bug: freeing stack pointer (Bug fixes)
  *     return max;
  * }
  */
@@ -130,64 +145,69 @@ void get_movie_genres(char *moviegenres, char *s){
  *         k=0;
  *     }
  *     fclose(fstream);
- *     free(line);    // Bug: freeing stack pointer (Optimization 5.5)
- *     free(record);  // Bug: freeing stack pointer (Optimization 5.5)
+ *     free(line);    // Bug: freeing stack pointer (Bug fixes)
+ *     free(record);  // Bug: freeing stack pointer (Bug fixes)
  * }
  */
 
-// OPTIMIZED: merged findusers + get_utility_matrix + fast CSV parsing
+// OPTIMIZED: merged findusers + get_utility_matrix + memory buffered I/O
 int get_utility_matrix(double **utility_matrix_out, char *s, int No_of_movies, int uid){
-	char tmp[1024];
-	FILE *fstream = fopen(s,"r");
+	FILE *fstream = fopen(s,"rb");
 	if (!fstream) {
 		printf("Error: Could not open file %s\n", s);
 		exit(1);
 	}
 
-	// Optimization 5.3: First pass — find max userId to determine No_of_users
-	// Optimization 5.4: atoi(tmp) parses the integer at the start of the line
-	// and stops at the first non-digit character (the comma), so we get
-	// the userId without needing strtok to split the line
+	fseek(fstream, 0, SEEK_END);
+	long fileSize = ftell(fstream);
+	fseek(fstream, 0, SEEK_SET);
+
+	char *buffer = (char *)malloc(fileSize + 1);
+	if (!buffer) {
+		printf("Error: Memory allocation failed for file buffer\n");
+		exit(1);
+	}
+	fread(buffer, 1, fileSize, fstream);
+	fclose(fstream);
+	buffer[fileSize] = '\0';
+
 	int No_of_users = 0;
-	while(fgets(tmp, sizeof(tmp), fstream) != NULL){
-		int t = atoi(tmp);
-		if(t > No_of_users) No_of_users = t;
+	char *p = buffer;
+	while (*p) {
+		int t = atoi(p);
+		if (t > No_of_users) No_of_users = t;
+		while (*p && *p != '\n') p++;
+		if (*p == '\n') p++;
 	}
 
-	// Optimization 5.3: Allocate the utility matrix internally
-	// (No_of_users rows x No_of_movies columns)
 	*utility_matrix_out = (double *)calloc(No_of_users * No_of_movies, sizeof(double));
-	if(!*utility_matrix_out){
+	if (!*utility_matrix_out) {
 		printf("Error: Memory allocation failed for utility matrix\n");
 		exit(1);
 	}
 
-	// Optimization 5.3: Second pass — fill the matrix with ratings
-	// rewind() repositions to the start without reopening the file
-	rewind(fstream);
-	while(fgets(tmp, sizeof(tmp), fstream) != NULL){
-		// Optimization 5.4: Manual comma-scan instead of strtok
-		// Parse userId (first field) — atoi stops at the comma
-		char *p = tmp;
+	p = buffer;
+	while (*p) {
 		int i = atoi(p) - 1;
 
-		// Skip to movieId (second field) — advance past first comma
-		while(*p != ',' && *p != '\0') p++;
-		if(*p == ',') p++;
+		while (*p != ',' && *p != '\0') p++;
+		if (*p == ',') p++;
 		int j = atoi(p) - 1;
 
-		// Skip to rating (third field) — advance past second comma
-		while(*p != ',' && *p != '\0') p++;
-		if(*p == ',') p++;
+		while (*p != ',' && *p != '\0') p++;
+		if (*p == ',') p++;
 		(*utility_matrix_out)[i * No_of_movies + j] = atof(p);
+
+		while (*p != '\n' && *p != '\0') p++;
+		if (*p == '\n') p++;
 	}
 
-	fclose(fstream);
-	return No_of_users; // Optimization 5.3: return No_of_users instead of separate findusers()
+	free(buffer);
+	return No_of_users;
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
- * OPTIMIZATION 5.2: Replace File I/O with Memory Copy in new_user_movies()
+ * OPTIMIZATION 2: Replace File I/O with Memory Copy in new_user_movies()
  *
  * BEFORE: Opened and parsed the entire ratings_learn.csv file to extract
  * one user's ratings. But this data was already loaded into the utility
@@ -229,8 +249,8 @@ int get_utility_matrix(double **utility_matrix_out, char *s, int No_of_movies, i
  *         k=0;
  *     }
  *     fclose(fstream);
- *     free(line);    // Bug: freeing stack pointer (Optimization 5.5)
- *     free(record);  // Bug: freeing stack pointer (Optimization 5.5)
+ *     free(line);    // Bug: freeing stack pointer (Bug fixes)
+ *     free(record);  // Bug: freeing stack pointer (Bug fixes)
  * }
  */
 

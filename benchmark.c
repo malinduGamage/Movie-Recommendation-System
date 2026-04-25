@@ -277,7 +277,11 @@ void print_report(const BenchmarkResult *avg, int iterations, int userid) {
     printf("========================================================================\n");
     printf("       MOVIE RECOMMENDATION SYSTEM - PERFORMANCE BENCHMARK REPORT       \n");
     printf("========================================================================\n");
-    printf("  User ID          : %d\n", userid);
+    if (iterations > 1) {
+        printf("  User IDs         : %d to %d\n", userid, userid + iterations - 1);
+    } else {
+        printf("  User ID          : %d\n", userid);
+    }
     printf("  Iterations       : %d\n", iterations);
     printf("  Avg Total Time   : %.6f seconds\n", avg->total_time);
     printf("========================================================================\n\n");
@@ -402,8 +406,9 @@ int main(int argc, char *argv[]) {
     BenchmarkResult *all_results = (BenchmarkResult *)malloc(sizeof(BenchmarkResult) * iterations);
 
     for (i = 0; i < iterations; i++) {
-        printf("  Running iteration %d/%d ...\n", i + 1, iterations);
-        all_results[i] = run_benchmark_iteration(userid);
+        int current_userid = userid + i;
+        printf("  Running iteration %d/%d (user_id=%d)...\n", i + 1, iterations, current_userid);
+        all_results[i] = run_benchmark_iteration(current_userid);
         accumulate_result(&accumulator, &all_results[i]);
     }
 
